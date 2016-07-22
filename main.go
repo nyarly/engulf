@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type blank struct{}
@@ -31,21 +32,21 @@ var (
 )
 
 func main() {
-	var cpkg, dir, exclude string
+	var cpkg, dir, exclude, covermode string
 	var jobs int
-	var help bool
-	flag.BoolVar(&help, "help", false, "Print this info")
-	flag.IntVar(&jobs, "max-jobs", 3, "Run at most `n` test processes at once")
+	var short, parallel, verbose bool
+	var timeout time.Duration
+
+	flag.BoolVar(&verbose, "v", false, "Passed through to go test")
+	flag.BoolVar(&short, "short", false, "Passed through to go test")
+	flag.BoolVar(&parallel, "parallel", false, "Passed through to go test")
+	flag.DurationVar(&timeout, "timeout", 10*time.Minute, "Passed through to go test")
+	flag.StringVar(&covermode, "covermode", "set", "Passed directly to go test - defaults to <package-selector>")
 	flag.StringVar(&cpkg, "coverpkg", "", "Passed directly to go test - defaults to <package-selector>")
+	flag.IntVar(&jobs, "max-jobs", 3, "Run at most `n` test processes at once")
 	flag.StringVar(&dir, "coverdir", "/tmp", "Storage `directory` for cover profiles - defaults to /tmp")
 	flag.StringVar(&exclude, "exclude", "/vendor/", "`pattern` to exclude from coverage list")
 	flag.Parse()
-
-	if help {
-		fmt.Print(docstring)
-		flag.PrintDefaults()
-		os.Exit(0)
-	}
 
 	sel := flag.Args()[len(flag.Args())-1]
 
@@ -71,13 +72,23 @@ func main() {
 		cpkg = strings.Join(pkgs, ",")
 	}
 
-	covArgs := flag.Args()[:len(flag.Args())-1]
+	var covArgs []string
+
+	if verbose {
+		covArgs = append(covArgs, "-v")
+	}
+	if short {
+		covArgs = append(covArgs, "-short")
+	}
+	if parallel {
+		covArgs = append(covArgs, "-parallel")
+	}
 
 	covJobs := make(chan *exec.Cmd, jobs)
 	startC := make(chan blank, jobs)
 	stopC := make(chan result, jobs)
 
-	go queueJobs(covJobs, dir, cpkg, covArgs, pkgs)
+	go queueJobs(covJobs, dir, cpkg, covermode, covArgs, pkgs)
 
 	for j := range covJobs {
 		go runJob(j, startC, stopC)
@@ -108,11 +119,11 @@ func formatTests(res result) string {
 	return "BEGIN  " + res.j.Args[len(res.j.Args)-1] + "\n" + string(stripWarns(res.o))
 }
 
-func queueJobs(covJobs chan *exec.Cmd, dir, cpkg string, covArgs, pkgs []string) {
+func queueJobs(covJobs chan *exec.Cmd, dir, cpkg, mode string, covArgs, pkgs []string) {
 	for _, p := range pkgs {
 		path := profilepath(dir, p)
 		os.MkdirAll(filepath.Dir(path), os.ModeDir|os.ModePerm)
-		cov := exec.Command("go", "test", "--coverprofile="+path, "--coverpkg="+cpkg)
+		cov := exec.Command("go", "test", "--coverprofile="+path, "--coverpkg="+cpkg, "--covermode="+mode)
 		cov.Args = append(cov.Args, covArgs...)
 		cov.Args = append(cov.Args, p)
 		covJobs <- cov
@@ -125,7 +136,7 @@ func runJob(j *exec.Cmd, start chan blank, stop chan result) {
 	out, err := j.CombinedOutput()
 	switch err.(type) {
 	case *exec.ExitError:
-		cmd := exec.Command("go", append([]string{"test"}, j.Args[4:]...)...) //brittle
+		cmd := exec.Command("go", append([]string{"test"}, j.Args[5:]...)...) //brittle
 		no, ne := cmd.CombinedOutput()
 		if ne != nil {
 			out, err = no, ne
