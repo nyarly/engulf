@@ -1,0 +1,19 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "F+YOz/6ymsuIxUy511OAdxjyhRI=",
+			"path": "github.com/docopt/docopt-go",
+			"revision": "784ddc588536785e7299f7272f39101f7faccc3f",
+			"revisionTime": "2016-02-16T23:20:12Z"
+		},
+		{
+			"checksumSHA1": "SYaNSHmf8Hv9r8oYQByeUV7JQt0=",
+			"path": "github.com/nyarly/coerce",
+			"revision": "f145234e1c3c651cf5f83ebce49e7b492b264068",
+			"revisionTime": "2016-08-03T20:28:58Z"
+		}
+	],
+	"rootPath": "github.com/nyarly/engulf"
+}

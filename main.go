@@ -1,27 +1,55 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/docopt/docopt-go"
+	"github.com/nyarly/coerce"
 )
 
-type blank struct{}
-type result struct {
-	j *exec.Cmd
-	o []byte
-	e error
-}
+type (
+	blank  struct{}
+	result struct {
+		j *exec.Cmd
+		o []byte
+		e error
+	}
+	options struct {
+		verbose         bool
+		short           bool
+		parallel        bool
+		timeout         time.Duration
+		covermode       string
+		coverpkg        string
+		maxJobs         uint
+		coverdir        string
+		packageSelector string
+		exclude         []string
+	}
+)
 
 const (
 	version   = `0.1`
 	docstring = `Multiple-package coverage runner for Go
 Usage: engulf [options] <package-selector>
+
+Options:
+-v, --verbose                           Passed through to go test
+-s, --short                             Passed through to go test
+-p, --parallel                          Passed through to go test
+-t=<timeout>, --timeout=<timeout>       Passed through to go test [default: 10m]
+--covermode=<mode>                      Passed directly to go test [default: count]
+--coverpkg=<pkg>                        Passed directly to go test - defaults to <package-selector>
+-j=<n>, --max-jobs=<n>                  Run at most <n> test processes at once
+--coverdir=<dir>                        Storage dir for cover profiles [default: /tmp]
+-x=<pattern>, --exclude=<pattern>...    <patterns> to exclude from coverage list
 `
 )
 
@@ -32,25 +60,25 @@ var (
 )
 
 func main() {
-	var cpkg, dir, exclude, covermode string
-	var jobs int
-	var short, parallel, verbose bool
-	var timeout time.Duration
+	opts := options{
+		covermode: "set",
+		maxJobs:   3,
+		timeout:   10 * time.Minute,
+		coverdir:  "/tmp",
+		exclude:   []string{"vendor/"},
+	}
 
-	flag.BoolVar(&verbose, "v", false, "Passed through to go test")
-	flag.BoolVar(&short, "short", false, "Passed through to go test")
-	flag.BoolVar(&parallel, "parallel", false, "Passed through to go test")
-	flag.DurationVar(&timeout, "timeout", 10*time.Minute, "Passed through to go test")
-	flag.StringVar(&covermode, "covermode", "set", "Passed directly to go test - defaults to <package-selector>")
-	flag.StringVar(&cpkg, "coverpkg", "", "Passed directly to go test - defaults to <package-selector>")
-	flag.IntVar(&jobs, "max-jobs", 3, "Run at most `n` test processes at once")
-	flag.StringVar(&dir, "coverdir", "/tmp", "Storage `directory` for cover profiles - defaults to /tmp")
-	flag.StringVar(&exclude, "exclude", "/vendor/", "`pattern` to exclude from coverage list")
-	flag.Parse()
+	parsed, err := docopt.Parse(docstring, nil, true, "", false)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	sel := flag.Args()[len(flag.Args())-1]
+	err = coerce.Struct(&opts, parsed)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	gl := exec.Command("go", "list", sel)
+	gl := exec.Command("go", "list", opts.packageSelector)
 	list, err := gl.CombinedOutput()
 	if err != nil {
 		fmt.Print(string(list))
@@ -58,7 +86,8 @@ func main() {
 	}
 	pkgs := strings.Split(string(list), "\n")
 	pkgs = pkgs[:len(pkgs)-1]
-	excludeRE := regexp.MustCompile(exclude)
+
+	excludeRE := regexp.MustCompile(strings.Join(opts.exclude, "|"))
 	for i := 0; i < len(pkgs); {
 		if excludeRE.MatchString(pkgs[i]) {
 			pkgs[i] = pkgs[len(pkgs)-1]
@@ -66,29 +95,28 @@ func main() {
 		} else {
 			i++
 		}
-
 	}
-	if cpkg == "" {
-		cpkg = strings.Join(pkgs, ",")
+	if opts.coverpkg == "" {
+		opts.coverpkg = strings.Join(pkgs, ",")
 	}
 
 	var covArgs []string
 
-	if verbose {
+	if opts.verbose {
 		covArgs = append(covArgs, "-v")
 	}
-	if short {
+	if opts.short {
 		covArgs = append(covArgs, "-short")
 	}
-	if parallel {
+	if opts.parallel {
 		covArgs = append(covArgs, "-parallel")
 	}
 
-	covJobs := make(chan *exec.Cmd, jobs)
-	startC := make(chan blank, jobs)
-	stopC := make(chan result, jobs)
+	covJobs := make(chan *exec.Cmd, opts.maxJobs)
+	startC := make(chan blank, opts.maxJobs)
+	stopC := make(chan result, opts.maxJobs)
 
-	go queueJobs(covJobs, dir, cpkg, covermode, covArgs, pkgs)
+	go queueJobs(covJobs, opts.coverdir, opts.coverpkg, opts.covermode, covArgs, pkgs)
 
 	for j := range covJobs {
 		go runJob(j, startC, stopC)
