@@ -40,6 +40,7 @@ func main() {
 	pkgs = pkgs[:len(pkgs)-1]
 
 	excludeRE := regexp.MustCompile(strings.Join(strings.Split(opts.exclude, ","), "|"))
+	excludeFilesRE := regexp.MustCompile(strings.Join(strings.Split(opts.excludeFiles, ","), "|"))
 	for i := 0; i < len(pkgs); {
 		if excludeRE.MatchString(pkgs[i]) {
 			pkgs[i] = pkgs[len(pkgs)-1]
@@ -97,11 +98,11 @@ func main() {
 	}
 
 	if opts.mergeBase != "" {
-		mergedProfiles(opts.coverdir, opts.mergeBase, pkgs)
+		mergedProfiles(opts.coverdir, opts.mergeBase, pkgs, excludeFilesRE)
 	}
 }
 
-func mergedProfiles(dir, basename string, pkgs []string) {
+func mergedProfiles(dir, basename string, pkgs []string, excludeFilesRE *regexp.Regexp) {
 	merged := make(map[string]map[string]*cover.Profile)
 
 	for _, pkg := range pkgs {
@@ -160,11 +161,11 @@ func mergedProfiles(dir, basename string, pkgs []string) {
 		}
 
 		fname := filepath.Join(dir, kind+basename)
-		writeCoverprofile(fname, kind, list)
+		writeCoverprofile(fname, kind, list, excludeFilesRE)
 	}
 }
 
-func writeCoverprofile(filename, mode string, list []*cover.Profile) error {
+func writeCoverprofile(filename, mode string, list []*cover.Profile, excludeFilesRE *regexp.Regexp) error {
 	pf, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -175,11 +176,13 @@ func writeCoverprofile(filename, mode string, list []*cover.Profile) error {
 
 	for _, p := range list {
 		for _, b := range p.Blocks {
-			fmt.Fprintf(pf, "%s:%d.%d,%d.%d %d %d\n",
-				p.FileName,
-				b.StartLine, b.StartCol, b.EndLine, b.EndCol,
-				b.NumStmt, b.Count,
-			)
+			if !excludeFilesRE.MatchString(p.FileName) {
+				fmt.Fprintf(pf, "%s:%d.%d,%d.%d %d %d\n",
+					p.FileName,
+					b.StartLine, b.StartCol, b.EndLine, b.EndCol,
+					b.NumStmt, b.Count,
+				)
+			}
 		}
 	}
 	return nil
