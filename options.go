@@ -19,6 +19,7 @@ type options struct {
 	coverdir        string
 	packageSelector string
 	exclude         string
+	excludeFiles    string
 	mergeBase       string
 	onlyMerge       bool
 }
@@ -43,7 +44,8 @@ Options:
 	--coverpkg=<pkg>                        Passed directly to go test - defaults to <package-selector>
 	-j=<n>, --max-jobs=<n>                  Run at most <n> test processes at once [default: 3]
 	--coverdir=<dir>                        Storage dir for cover profiles [default: /tmp]
-	-x=<pattern>, --exclude=<pattern>       comma separated <patterns> to exclude from coverage list [default: vendor/]
+	-x=<pattern>, --exclude=<pattern>       comma separated package <patterns> to exclude from coverage list [default: vendor/]
+	--exclude-files=<pattern>               comma separated file <patterns> to exclude from coverage list
 	--merge-base=<filename>                 base name to use for merging coverage
 	--only-merge                            Don't do coverage, just merge coverage results
 `
