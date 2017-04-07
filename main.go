@@ -50,13 +50,13 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Running with: %s\n", strings.Join(pkgs, ","))
+	fmt.Printf("Excluding packages: '%v' files: '%v'\n", excludeRE, excludeFilesRE)
+	fmt.Printf("Running with: \n\t%s\n", strings.Join(pkgs, "\n\t"))
 
 	if !opts.onlyMerge {
 		if opts.coverpkg == "" {
 			opts.coverpkg = strings.Join(pkgs, ",")
 		}
-		fmt.Printf("Covering:     %s\n", opts.coverpkg)
 
 		var covArgs []string
 
@@ -208,12 +208,29 @@ func queueJobs(covJobs chan *exec.Cmd, dir, cpkg, mode string, covArgs, pkgs []s
 	close(covJobs)
 }
 
+func escaped(arg string) string {
+	if strings.IndexAny(arg, ` "'\`) != -1 {
+		return fmt.Sprintf("%q", arg)
+	}
+	return arg
+}
+
+func logCmd(c *exec.Cmd) {
+	args := []string{}
+	for _, a := range c.Args {
+		args = append(args, escaped(a))
+	}
+	fmt.Printf("%s\n", strings.Join(args, " "))
+}
+
 func runJob(j *exec.Cmd, start chan blank, stop chan result) {
 	start <- nothing
+	logCmd(j)
 	out, err := j.CombinedOutput()
 	switch err.(type) {
 	case *exec.ExitError:
 		cmd := exec.Command("go", append([]string{"test"}, j.Args[5:]...)...) //brittle
+		logCmd(cmd)
 		no, ne := cmd.CombinedOutput()
 		if ne != nil {
 			out, err = no, ne
